@@ -191,16 +191,15 @@ public class DeviceScanActivity extends AppCompatActivity {
             view.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
-                    Toast.makeText(DeviceScanActivity.this, deviceName, Toast.LENGTH_SHORT).show();
-//                    if (device == null) return;
-//                    final Intent intent = new Intent(DeviceScanActivity.this, DeviceControlActivity.class);
-//                    intent.putExtra(DeviceControlActivity.EXTRAS_DEVICE_NAME, device.getName());
-//                    intent.putExtra(DeviceControlActivity.EXTRAS_DEVICE_ADDRESS, device.getAddress());
-//                    if (mScanning) {
-//                        mBluetoothAdapter.stopLeScan(mLeScanCallback);
-//                        mScanning = false;
-//                    }
-//                    startActivity(intent);
+                    if (device == null) return;
+                    final Intent intent = new Intent(DeviceScanActivity.this, BluetoothMonitor.class);
+                    intent.putExtra("name", device.getName());
+                    intent.putExtra("address", device.getAddress());
+                    if (mScanning) {
+                        mBluetoothAdapter.stopLeScan(mLeScanCallback);
+                        mScanning = false;
+                    }
+                    startActivity(intent);
                 }
             });
             return view;
@@ -208,20 +207,18 @@ public class DeviceScanActivity extends AppCompatActivity {
     }
 
     // Device scan callback.
-    private BluetoothAdapter.LeScanCallback mLeScanCallback =
-            new BluetoothAdapter.LeScanCallback() {
-
+    private BluetoothAdapter.LeScanCallback mLeScanCallback = new BluetoothAdapter.LeScanCallback(){
+        @Override
+        public void onLeScan(final BluetoothDevice device, int rssi, byte[] scanRecord) {
+            runOnUiThread(new Runnable() {
                 @Override
-                public void onLeScan(final BluetoothDevice device, int rssi, byte[] scanRecord) {
-                    runOnUiThread(new Runnable() {
-                        @Override
-                        public void run() {
-                            mLeDeviceListAdapter.addDevice(device);
-                            mLeDeviceListAdapter.notifyDataSetChanged();
-                        }
-                    });
+                public void run() {
+                    mLeDeviceListAdapter.addDevice(device);
+                    mLeDeviceListAdapter.notifyDataSetChanged();
                 }
-            };
+            });
+        }
+    };
 
     static class ViewHolder {
         TextView deviceName;
