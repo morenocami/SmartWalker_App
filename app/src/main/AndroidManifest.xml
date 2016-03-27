@@ -26,6 +26,12 @@
 
         </activity>
 
+        <activity android:name = ".BluetoothMonitor"
+            android:label="BT-Monitor"
+            android:theme="@style/AppTheme">
+
+        </activity>
+
         <activity android:name = ".Node"
             android:label="Node">
 
