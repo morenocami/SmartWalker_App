@@ -86,6 +86,8 @@ public class DeviceScanActivity extends AppCompatActivity {
         // Initializes list view adapter.
         mLeDeviceListAdapter = new LeDeviceListAdapter();
         listView.setAdapter(mLeDeviceListAdapter);
+        mLeDeviceListAdapter.clear();
+        scanLeDevice(true);
     }
 
     @Override

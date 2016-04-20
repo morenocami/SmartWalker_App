@@ -13,9 +13,12 @@ import android.content.Intent;
 import android.os.Bundle;
 import android.os.Handler;
 import android.support.v7.app.AppCompatActivity;
+import android.telephony.PhoneNumberFormattingTextWatcher;
+import android.telephony.SmsManager;
 import android.util.Log;
 import android.view.View;
 import android.view.WindowManager;
+import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -47,9 +50,12 @@ public class BluetoothMonitor extends AppCompatActivity{
     private Date messageTime, responseTime;
     private final static UUID SERIAL = UUID.fromString("0000dfb1-0000-1000-8000-00805f9b34fb");
     private final static UUID SERIALSERVICE = UUID.fromString("0000dfb0-0000-1000-8000-00805f9b34fb");
-    private boolean alarm =false;
+    private boolean alarm =false, noAlert=true;
     private Timer timer;
     private long sent, delay;
+
+    private String phoneNumber;
+    private EditText phone;
 
     private static final int STATE_DISCONNECTED = 0;
     private static final int STATE_CONNECTING = 1;
@@ -76,6 +82,14 @@ public class BluetoothMonitor extends AppCompatActivity{
         deviceName = getIntent().getStringExtra("name");
         deviceAddress= getIntent().getStringExtra("address");
         delayView = (TextView) findViewById(R.id.delay);
+
+        TextView view = (TextView) findViewById(R.id.devnameV);
+        view.setText(deviceName);
+        view = (TextView) findViewById(R.id.addressV);
+        view.setText(deviceAddress);
+        phone = (EditText) findViewById(R.id.newNumber);
+        phone.addTextChangedListener(new PhoneNumberFormattingTextWatcher());
+
 
         if (!initialize()) {
             Log.e(TAG, "Unable to initialize Bluetooth");
@@ -108,8 +122,14 @@ public class BluetoothMonitor extends AppCompatActivity{
                         mBluetoothGatt.discoverServices());
 
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
-//                intentAction = ACTION_GATT_DISCONNECTED;
-                delayView.setText("Disconnected");
+                sendSMS(false);
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        delayView.setText("Disconnected");
+                        updateFuture.cancel(true);
+                    }
+                });
             }
         }
 
@@ -124,8 +144,9 @@ public class BluetoothMonitor extends AppCompatActivity{
                     public void run() {
                         serial.setValue(new byte[]{0});
                         sent = System.nanoTime();
-                        mBluetoothGatt.writeCharacteristic(serial);                    }
-                }, 0, 1000);
+                        mBluetoothGatt.writeCharacteristic(serial);
+                    }
+                }, 0, 400);
 //                broadcastUpdate(ACTION_GATT_SERVICES_DISCOVERED);
             } else {
                 Log.w(TAG, "onServicesDiscovered received: " + status);
@@ -144,11 +165,21 @@ public class BluetoothMonitor extends AppCompatActivity{
         public void onCharacteristicChanged(BluetoothGatt gatt, final BluetoothGattCharacteristic characteristic) {
             if(characteristic.getUuid().equals(SERIAL)) {
                 if (characteristic.getValue()[0]==48) {
-                    delay = System.nanoTime() - sent;
+                    delay = (System.nanoTime() - sent)/1000000;
+                    if(delay>500 && noAlert){
+                        noAlert=false;
+                        sendSMS(true);
+                        new Handler().postDelayed(new Runnable() {
+                            @Override
+                            public void run() {
+                                noAlert=true;
+                            }
+                        },100000);
+                    }
                     runOnUiThread(new Runnable() {
                         @Override
                         public void run() {
-                            delayView.setText(Long.toString(delay/1000000));
+                            delayView.setText(Long.toString(delay));
                             updateFuture.cancel(true);
                         }
                     });
@@ -168,10 +199,42 @@ public class BluetoothMonitor extends AppCompatActivity{
     // submit task to threadpool:
     private Future updateFuture = threadPoolExecutor.submit(runnable);
 
-    public void blink(View v){
-        serial.setValue(new byte[]{1});
-        mBluetoothGatt.writeCharacteristic(serial);
+
+    public void updateCaretaker(View v){
+        if(phone.getText().toString().length()==14){
+            phoneNumber = phone.getText().toString();
+            TextView view = (TextView) findViewById(R.id.currentNumber);
+            view.setText(phoneNumber);
+            phone.setText("");
+            phoneNumber = phoneNumber.replaceAll("[^\\d]", "");
+        }
+        else
+            Toast.makeText(this, "Make sure you enter a 10-digit number",Toast.LENGTH_SHORT).show();
     }
+
+    private void sendSMS(boolean stillConnected){
+        String message;
+        if(stillConnected) message = "Patient is at edge of monitored area.";
+        else message = "Smart Walker has been disconnected.";
+        if(phoneNumber!=null){
+            try {
+                SmsManager smsManager = SmsManager.getDefault();
+                smsManager.sendTextMessage(phoneNumber, null, message, null, null);
+                Toast.makeText(getApplicationContext(), "SMS Sent!",
+                        Toast.LENGTH_SHORT).show();
+            } catch (Exception e) {
+                Toast.makeText(BluetoothMonitor.this,
+                        "SMS failed, please try again later!",
+                        Toast.LENGTH_SHORT).show();
+                e.printStackTrace();
+            }
+        }
+    }
+
+
+
+
+
 
 
     private void broadcastUpdate(final String action,
@@ -267,7 +330,7 @@ public class BluetoothMonitor extends AppCompatActivity{
         }
         // We want to directly connect to the device, so we are setting the autoConnect
         // parameter to false.
-        mBluetoothGatt = device.connectGatt(this, false, mGattCallback);
+        mBluetoothGatt = device.connectGatt(this, true, mGattCallback);
         Log.d(TAG, "Trying to create a new connection.");
         mConnectionState = STATE_CONNECTING;
         return true;
