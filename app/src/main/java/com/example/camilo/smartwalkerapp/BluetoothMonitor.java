@@ -53,13 +53,19 @@ public class BluetoothMonitor extends AppCompatActivity{
     private boolean alarm =false, noAlert=true;
     private Timer timer;
     private long sent, delay;
+    private long[] delays;
+
+    private int count=0;
 
     private String phoneNumber;
     private EditText phone;
 
+
     private static final int STATE_DISCONNECTED = 0;
     private static final int STATE_CONNECTING = 1;
     private static final int STATE_CONNECTED = 2;
+    private static final int RUNNING_AVERAGE = 100;
+    private static final int DISPLAY_AVERAGE = 10;
 
     public final static String ACTION_GATT_CONNECTED =
             "com.example.bluetooth.le.ACTION_GATT_CONNECTED";
@@ -89,7 +95,9 @@ public class BluetoothMonitor extends AppCompatActivity{
         view.setText(deviceAddress);
         phone = (EditText) findViewById(R.id.newNumber);
         phone.addTextChangedListener(new PhoneNumberFormattingTextWatcher());
-
+        delays = new long[RUNNING_AVERAGE];
+        for(int x=0; x<RUNNING_AVERAGE; x++)
+            delays[x]=0;
 
         if (!initialize()) {
             Log.e(TAG, "Unable to initialize Bluetooth");
@@ -127,7 +135,6 @@ public class BluetoothMonitor extends AppCompatActivity{
                     @Override
                     public void run() {
                         delayView.setText("Disconnected");
-                        updateFuture.cancel(true);
                     }
                 });
             }
@@ -138,16 +145,11 @@ public class BluetoothMonitor extends AppCompatActivity{
             if (status == BluetoothGatt.GATT_SUCCESS) {
                 serial=mBluetoothGatt.getService(SERIALSERVICE).getCharacteristic(SERIAL);
                 mBluetoothGatt.setCharacteristicNotification(serial, true);
-                timer = new Timer();
-                timer.scheduleAtFixedRate(new TimerTask() {
-                    @Override
-                    public void run() {
-                        serial.setValue(new byte[]{0});
-                        sent = System.nanoTime();
-                        mBluetoothGatt.writeCharacteristic(serial);
-                    }
-                }, 0, 400);
-//                broadcastUpdate(ACTION_GATT_SERVICES_DISCOVERED);
+
+                serial.setValue(new byte[]{0});
+                sent = System.nanoTime();
+                mBluetoothGatt.writeCharacteristic(serial);
+
             } else {
                 Log.w(TAG, "onServicesDiscovered received: " + status);
             }
@@ -155,7 +157,6 @@ public class BluetoothMonitor extends AppCompatActivity{
 
         @Override
         public void onCharacteristicRead(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
-
             if (status == BluetoothGatt.GATT_SUCCESS) {
                 broadcastUpdate(ACTION_DATA_AVAILABLE, characteristic);
             }
@@ -165,8 +166,10 @@ public class BluetoothMonitor extends AppCompatActivity{
         public void onCharacteristicChanged(BluetoothGatt gatt, final BluetoothGattCharacteristic characteristic) {
             if(characteristic.getUuid().equals(SERIAL)) {
                 if (characteristic.getValue()[0]==48) {
-                    delay = (System.nanoTime() - sent)/1000000;
-                    if(delay>500 && noAlert){
+                    delay = (System.nanoTime() - sent);
+                    delays[count] = delay;
+                    runningAverage();
+                    if(delay>25000000 && noAlert){
                         noAlert=false;
                         sendSMS(true);
                         new Handler().postDelayed(new Runnable() {
@@ -176,32 +179,30 @@ public class BluetoothMonitor extends AppCompatActivity{
                             }
                         },100000);
                     }
-                    runOnUiThread(new Runnable() {
-                        @Override
-                        public void run() {
-                            delayView.setText(Long.toString(delay));
-                            updateFuture.cancel(true);
-                        }
-                    });
+
+                    count++;
+                    if(count==DISPLAY_AVERAGE){
+                        runOnUiThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                delayView.setText(Long.toString(delay/1000000));
+                            }
+                        });
+                        count=0;
+                    }
+                    serial.setValue(new byte[]{0});
+                    sent = System.nanoTime();
+                    mBluetoothGatt.writeCharacteristic(serial);
                 }
             }
         }
     };
 
-    private ExecutorService threadPoolExecutor = Executors.newSingleThreadExecutor();
-    private Runnable runnable = new Runnable() {
-        @Override
-        public void run() {
-            Toast.makeText(BluetoothMonitor.this,"",Toast.LENGTH_SHORT).show();
-            updateFuture.cancel(true);
-        }
-    };
-    // submit task to threadpool:
-    private Future updateFuture = threadPoolExecutor.submit(runnable);
+
 
 
     public void updateCaretaker(View v){
-        if(phone.getText().toString().length()==14){
+        if(phone.getText().toString().length()==14) {
             phoneNumber = phone.getText().toString();
             TextView view = (TextView) findViewById(R.id.currentNumber);
             view.setText(phoneNumber);
@@ -231,8 +232,12 @@ public class BluetoothMonitor extends AppCompatActivity{
         }
     }
 
-
-
+    private void runningAverage(){
+        long sum = 0;
+        for(int x=0; x<RUNNING_AVERAGE; x++)
+            sum+=delays[x];
+        delay = sum/RUNNING_AVERAGE;
+    }
 
 
 
@@ -330,7 +335,7 @@ public class BluetoothMonitor extends AppCompatActivity{
         }
         // We want to directly connect to the device, so we are setting the autoConnect
         // parameter to false.
-        mBluetoothGatt = device.connectGatt(this, true, mGattCallback);
+        mBluetoothGatt = device.connectGatt(this, false, mGattCallback);
         Log.d(TAG, "Trying to create a new connection.");
         mConnectionState = STATE_CONNECTING;
         return true;

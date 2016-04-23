@@ -14,7 +14,8 @@
         android:theme="@style/AppTheme">
 
         <activity android:name = ".DeviceScanActivity"
-            android:theme="@style/AppTheme">
+            android:theme="@style/AppTheme"
+            android:screenOrientation="portrait">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
@@ -24,7 +25,8 @@
 
         <activity android:name = ".BluetoothMonitor"
             android:label="BT-Monitor"
-            android:theme="@style/AppTheme">
+            android:theme="@style/AppTheme"
+            android:screenOrientation="portrait">
 
         </activity>
 
